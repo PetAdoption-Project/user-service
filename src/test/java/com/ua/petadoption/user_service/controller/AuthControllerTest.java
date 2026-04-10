@@ -1,31 +1,34 @@
 package com.ua.petadoption.user_service.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ua.petadoption.commons.exception.GlobalExceptionHandler;
+import com.ua.petadoption.commons.exception.ServiceException;
 import com.ua.petadoption.commons.user.Role;
-import com.ua.petadoption.commons.user.UserDTO;
-import com.ua.petadoption.user_service.dto.AuthResponse;
+import com.ua.petadoption.user_service.dto.KeycloakTokenResponse;
 import com.ua.petadoption.user_service.dto.LoginRequest;
 import com.ua.petadoption.user_service.dto.RegisterRequest;
-import com.ua.petadoption.user_service.dto.TokenResponse;
+import com.ua.petadoption.user_service.exception.UserErrorCode;
 import com.ua.petadoption.user_service.service.AuthService;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.util.UUID;
 import java.util.stream.Stream;
 
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(AuthController.class)
+@Import(GlobalExceptionHandler.class)
 class AuthControllerTest {
 
     @Autowired
@@ -38,9 +41,9 @@ class AuthControllerTest {
     private AuthService authService;
 
     @Test
-    void login_validRequest_shouldReturn200WithTokens() throws Exception {
+    void login_validRequest_shouldReturn200WithAccessTokenAndCookie() throws Exception {
         LoginRequest request = new LoginRequest("user@test.com", "password123");
-        TokenResponse tokens = new TokenResponse("access-token", "refresh-token", 300L);
+        KeycloakTokenResponse tokens = new KeycloakTokenResponse("access-token", "refresh-token", 300L, 2592000L);
         when(authService.login("user@test.com", "password123")).thenReturn(tokens);
 
         mockMvc.perform(post("/api/auth/login")
@@ -48,8 +51,10 @@ class AuthControllerTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken").value("access-token"))
-                .andExpect(jsonPath("$.refreshToken").value("refresh-token"))
-                .andExpect(jsonPath("$.expiresIn").value(300));
+                .andExpect(jsonPath("$.expiresIn").value(300))
+                .andExpect(jsonPath("$.refreshToken").doesNotExist())
+                .andExpect(cookie().exists("refresh_token"))
+                .andExpect(cookie().httpOnly("refresh_token", true));
     }
 
     @ParameterizedTest
@@ -70,18 +75,28 @@ class AuthControllerTest {
     }
 
     @Test
-    void register_validRequest_shouldReturn201WithUserAndTokens() throws Exception {
+    void register_validRequest_shouldReturn201() throws Exception {
         RegisterRequest request = new RegisterRequest("user@test.com", "password123", Role.ADOPTER, "John", "Doe");
-        UserDTO userDto = new UserDTO(UUID.randomUUID(), "keycloak-id", "user@test.com", "John", "Doe", Role.ADOPTER, null);
-        AuthResponse response = new AuthResponse(userDto, "access-token", "refresh-token", 300L);
-        when(authService.register("user@test.com", "password123", "John", "Doe", Role.ADOPTER)).thenReturn(response);
 
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.user.email").value("user@test.com"))
-                .andExpect(jsonPath("$.accessToken").value("access-token"));
+                .andExpect(status().isCreated());
+
+        verify(authService).register("user@test.com", "password123", "John", "Doe", Role.ADOPTER);
+    }
+
+    @Test
+    void register_existingEmail_shouldReturn409() throws Exception {
+        RegisterRequest request = new RegisterRequest("user@test.com", "password123", Role.ADOPTER, "John", "Doe");
+        doThrow(new ServiceException(HttpStatus.CONFLICT, UserErrorCode.USER_EMAIL_ALREADY_EXISTS))
+                .when(authService).register("user@test.com", "password123", "John", "Doe", Role.ADOPTER);
+
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("USER_EMAIL_ALREADY_EXISTS"));
     }
 
     @ParameterizedTest
@@ -101,5 +116,30 @@ class AuthControllerTest {
                 new RegisterRequest("user@test.com", "password123", Role.ADOPTER, "", "Doe"),
                 new RegisterRequest("user@test.com", "password123", Role.ADOPTER, "John", "")
         );
+    }
+
+
+    @Test
+    void refresh_validCookie_shouldReturn200WithNewAccessTokenAndCookie() throws Exception {
+        KeycloakTokenResponse tokens = new KeycloakTokenResponse("new-access-token", "new-refresh-token", 300L, 2592000L);
+        when(authService.refresh("valid-refresh-token")).thenReturn(tokens);
+
+        mockMvc.perform(post("/api/auth/refresh")
+                        .cookie(new Cookie("refresh_token", "valid-refresh-token")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").value("new-access-token"))
+                .andExpect(jsonPath("$.expiresIn").value(300))
+                .andExpect(jsonPath("$.refreshToken").doesNotExist())
+                .andExpect(cookie().exists("refresh_token"));
+    }
+
+    @Test
+    void refresh_missingCookie_shouldReturn401() throws Exception {
+        when(authService.refresh(null))
+                .thenThrow(new ServiceException(HttpStatus.UNAUTHORIZED, UserErrorCode.INVALID_CREDENTIALS));
+
+        mockMvc.perform(post("/api/auth/refresh"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
     }
 }

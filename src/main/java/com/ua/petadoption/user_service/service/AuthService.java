@@ -2,16 +2,15 @@ package com.ua.petadoption.user_service.service;
 
 import com.ua.petadoption.commons.exception.ServiceException;
 import com.ua.petadoption.commons.user.Role;
-import com.ua.petadoption.commons.user.UserDTO;
 import com.ua.petadoption.user_service.client.KeycloakTokenClient;
-import com.ua.petadoption.user_service.dto.AuthResponse;
-import com.ua.petadoption.user_service.dto.TokenResponse;
+import com.ua.petadoption.user_service.dto.KeycloakTokenResponse;
 import com.ua.petadoption.user_service.exception.UserErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 @Slf4j
 @Service
@@ -22,7 +21,7 @@ public class AuthService {
     private final KeycloakTokenClient keycloakTokenClient;
     private final UserService userService;
 
-    public AuthResponse register(String email, String password, String firstName, String lastName, Role role) {
+    public void register(String email, String password, String firstName, String lastName, Role role) {
         log.info("Registering new user {} {} with role {}", firstName, lastName, role);
 
         if (userService.existsByEmail(email)) {
@@ -32,19 +31,17 @@ public class AuthService {
 
         String keycloakId = keycloakAdminService.createUser(email, password, firstName, lastName);
         keycloakAdminService.assignRole(keycloakId, role);
-        UserDTO user = userService.createUser(keycloakId, email, firstName, lastName, role);
-        TokenResponse tokens = keycloakTokenClient.getToken(email, password);
+        userService.createUser(keycloakId, email, firstName, lastName, role);
 
         log.info("User registered successfully with role {}", role);
-        return new AuthResponse(user, tokens.accessToken(), tokens.refreshToken(), tokens.expiresIn());
     }
 
-    public TokenResponse login(String email, String password) {
+    public KeycloakTokenResponse login(String email, String password) {
         log.info("Login attempt for user {}", email);
         return keycloakTokenClient.getToken(email, password);
     }
 
-    public AuthResponse completeRegistration(String keycloakId, Role role) {
+    public void completeRegistration(String keycloakId, Role role) {
         log.info("Completing OAuth2 registration for keycloakId {} with role {}", keycloakId, role);
 
         if (userService.existsByKeycloakId(keycloakId)) {
@@ -54,10 +51,18 @@ public class AuthService {
 
         UserRepresentation keycloakUser = keycloakAdminService.getUserById(keycloakId);
         keycloakAdminService.assignRole(keycloakId, role);
-        UserDTO user = userService.createUser(keycloakId, keycloakUser.getEmail(),
+        userService.createUser(keycloakId, keycloakUser.getEmail(),
                 keycloakUser.getFirstName(), keycloakUser.getLastName(), role);
 
         log.info("OAuth2 registration completed for keycloakId {} with role {}", keycloakId, role);
-        return new AuthResponse(user, null, null, 0);
+    }
+
+    public KeycloakTokenResponse refresh(String refreshToken) {
+        if (!StringUtils.hasText(refreshToken)) {
+            log.debug("Refresh token not present");
+            throw new ServiceException(HttpStatus.UNAUTHORIZED, UserErrorCode.INVALID_CREDENTIALS);
+        }
+        log.debug("Refreshing token");
+        return keycloakTokenClient.refreshToken(refreshToken);
     }
 }

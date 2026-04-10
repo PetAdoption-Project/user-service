@@ -4,8 +4,7 @@ import com.ua.petadoption.commons.exception.ServiceException;
 import com.ua.petadoption.commons.user.Role;
 import com.ua.petadoption.commons.user.UserDTO;
 import com.ua.petadoption.user_service.client.KeycloakTokenClient;
-import com.ua.petadoption.user_service.dto.AuthResponse;
-import com.ua.petadoption.user_service.dto.TokenResponse;
+import com.ua.petadoption.user_service.dto.KeycloakTokenResponse;
 import com.ua.petadoption.user_service.exception.UserErrorCode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,10 +36,10 @@ class AuthServiceTest {
 
     @Test
     void login_validCredentials_shouldReturnTokens() {
-        TokenResponse expected = new TokenResponse("access-token", "refresh-token", 300L);
+        KeycloakTokenResponse expected = new KeycloakTokenResponse("access-token", "refresh-token", 300L, 2592000L);
         when(keycloakTokenClient.getToken("user@test.com", "password")).thenReturn(expected);
 
-        TokenResponse result = authService.login("user@test.com", "password");
+        KeycloakTokenResponse result = authService.login("user@test.com", "password");
 
         assertThat(result).isEqualTo(expected);
         verify(keycloakTokenClient).getToken("user@test.com", "password");
@@ -52,28 +51,25 @@ class AuthServiceTest {
                 .thenThrow(new ServiceException(HttpStatus.UNAUTHORIZED, UserErrorCode.INVALID_CREDENTIALS));
 
         assertThatThrownBy(() -> authService.login("user@test.com", "wrong"))
-                .isInstanceOf(ServiceException.class)
-                .extracting(e -> ((ServiceException) e).getStatus())
-                .isEqualTo(HttpStatus.UNAUTHORIZED);
+                .isInstanceOfSatisfying(ServiceException.class, se -> {
+                    assertThat(se.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED);
+                    assertThat(se.getErrorCode()).isEqualTo(UserErrorCode.INVALID_CREDENTIALS);
+                });
     }
 
     @Test
-    void register_newUser_shouldCreateKeycloakUserAndReturnAuthResponse() {
+    void register_newUser_shouldCreateUserAndAssignRole() {
         UserDTO userDto = new UserDTO(UUID.randomUUID(), "keycloak-id", "user@test.com", "John", "Doe", Role.ADOPTER, null);
-        TokenResponse tokens = new TokenResponse("access-token", "refresh-token", 300L);
 
         when(userService.existsByEmail("user@test.com")).thenReturn(false);
         when(keycloakAdminService.createUser("user@test.com", "password", "John", "Doe")).thenReturn("keycloak-id");
         when(userService.createUser("keycloak-id", "user@test.com", "John", "Doe", Role.ADOPTER)).thenReturn(userDto);
-        when(keycloakTokenClient.getToken("user@test.com", "password")).thenReturn(tokens);
 
-        AuthResponse result = authService.register("user@test.com", "password", "John", "Doe", Role.ADOPTER);
+        authService.register("user@test.com", "password", "John", "Doe", Role.ADOPTER);
 
-        assertThat(result.user()).isEqualTo(userDto);
-        assertThat(result.accessToken()).isEqualTo("access-token");
-        assertThat(result.refreshToken()).isEqualTo("refresh-token");
-        assertThat(result.expiresIn()).isEqualTo(300L);
+        verify(keycloakAdminService).createUser("user@test.com", "password", "John", "Doe");
         verify(keycloakAdminService).assignRole("keycloak-id", Role.ADOPTER);
+        verify(userService).createUser("keycloak-id", "user@test.com", "John", "Doe", Role.ADOPTER);
     }
 
     @Test
@@ -81,10 +77,36 @@ class AuthServiceTest {
         when(userService.existsByEmail("user@test.com")).thenReturn(true);
 
         assertThatThrownBy(() -> authService.register("user@test.com", "password", "John", "Doe", Role.ADOPTER))
-                .isInstanceOf(ServiceException.class)
-                .extracting(e -> ((ServiceException) e).getStatus())
-                .isEqualTo(HttpStatus.CONFLICT);
+                .isInstanceOfSatisfying(ServiceException.class, se -> {
+                    assertThat(se.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                    assertThat(se.getErrorCode()).isEqualTo(UserErrorCode.USER_EMAIL_ALREADY_EXISTS);
+                });
 
         verifyNoInteractions(keycloakAdminService, keycloakTokenClient);
+    }
+
+    @Test
+    void refresh_validToken_shouldReturnNewTokens() {
+        KeycloakTokenResponse expected = new KeycloakTokenResponse("new-access-token", "new-refresh-token", 300L, 2592000L);
+        when(keycloakTokenClient.refreshToken("valid-refresh-token")).thenReturn(expected);
+
+        KeycloakTokenResponse result = authService.refresh("valid-refresh-token");
+
+        assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void refresh_missingToken_shouldThrowUnauthorized() {
+        assertThatThrownBy(() -> authService.refresh(null))
+                .isInstanceOfSatisfying(ServiceException.class, se -> {
+                    assertThat(se.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED);
+                    assertThat(se.getErrorCode()).isEqualTo(UserErrorCode.INVALID_CREDENTIALS);
+                });
+
+        assertThatThrownBy(() -> authService.refresh("  "))
+                .isInstanceOfSatisfying(ServiceException.class, se -> {
+                    assertThat(se.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED);
+                    assertThat(se.getErrorCode()).isEqualTo(UserErrorCode.INVALID_CREDENTIALS);
+                });
     }
 }

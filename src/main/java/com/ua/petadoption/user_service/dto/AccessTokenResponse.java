@@ -1,8 +1,7 @@
 package com.ua.petadoption.user_service.dto;
 
-public record TokenResponse(
+public record AccessTokenResponse(
         String accessToken,
-        String refreshToken,
         long expiresIn
 ) {
 }
