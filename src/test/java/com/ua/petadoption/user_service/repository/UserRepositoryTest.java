@@ -1,11 +1,13 @@
 package com.ua.petadoption.user_service.repository;
 
-import com.ua.petadoption.user_service.model.Role;
+import com.ua.petadoption.commons.user.Role;
 import com.ua.petadoption.user_service.model.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import com.ua.petadoption.user_service.config.JpaConfig;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import java.util.Optional;
@@ -13,6 +15,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DataJpaTest
+@Import(JpaConfig.class)
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 class UserRepositoryTest {
 
@@ -21,8 +24,10 @@ class UserRepositoryTest {
 
     private User createUser() {
         User user = new User();
+        user.setKeycloakId("keycloakId");
         user.setEmail("test@test.com");
-        user.setPassword("hashedPassword");
+        user.setFirstName("John");
+        user.setLastName("Doe");
         user.setRole(Role.ADOPTER);
         return userRepository.save(user);
     }
