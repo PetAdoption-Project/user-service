@@ -52,7 +52,7 @@ public class AuthController {
 
     @PostMapping("/complete-registration")
     public ResponseEntity<Void> completeRegistration(
-            @RequestHeader(UserHeaders.USER_ID) String keycloakId,
+            @RequestHeader(UserHeaders.AUTH_SUBJECT) String keycloakId,
             @RequestBody @Valid CompleteRegistrationRequest request) {
         authService.completeRegistration(keycloakId, request.role());
         return ResponseEntity.status(HttpStatus.CREATED).build();
