@@ -5,12 +5,17 @@ on:
     branches: [master]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      MAVEN_USERNAME: ${{ github.actor }}
-      MAVEN_PASSWORD: ${{ secrets.GH_PAT }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -19,6 +24,8 @@ jobs:
           distribution: temurin
           cache: maven
           server-id: github-packages
-          server-username: MAVEN_USERNAME
-          server-password: MAVEN_PASSWORD
+          server-username: GITHUB_ACTOR
+          server-password: GITHUB_TOKEN
       - run: mvn verify
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
