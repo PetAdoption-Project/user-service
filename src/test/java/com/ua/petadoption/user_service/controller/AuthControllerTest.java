@@ -1,25 +1,17 @@
 package com.ua.petadoption.user_service.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.ua.petadoption.commons.exception.GlobalExceptionHandler;
 import com.ua.petadoption.commons.exception.ServiceException;
 import com.ua.petadoption.commons.user.Role;
 import com.ua.petadoption.user_service.dto.KeycloakTokenResponse;
 import com.ua.petadoption.user_service.dto.LoginRequest;
 import com.ua.petadoption.user_service.dto.RegisterRequest;
 import com.ua.petadoption.user_service.exception.UserErrorCode;
-import com.ua.petadoption.user_service.service.AuthService;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.stream.Stream;
 
@@ -27,18 +19,7 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(AuthController.class)
-@Import(GlobalExceptionHandler.class)
-class AuthControllerTest {
-
-    @Autowired
-    private MockMvc mockMvc;
-
-    @Autowired
-    private ObjectMapper objectMapper;
-
-    @MockitoBean
-    private AuthService authService;
+class AuthControllerTest extends BaseControllerTest {
 
     @Test
     void login_validRequest_shouldReturn200WithAccessTokenAndCookie() throws Exception {

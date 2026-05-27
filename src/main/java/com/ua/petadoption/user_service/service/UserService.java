@@ -39,4 +39,11 @@ public class UserService {
     public boolean existsByEmail(String email) {
         return userRepository.existsByEmail(email);
     }
+
+    @Transactional(readOnly = true)
+    public UserDTO getByKeycloakId(String keycloakId) {
+        return userRepository.findByKeycloakId(keycloakId)
+                .map(userMapper::toDto)
+                .orElseThrow(() -> new ServiceException(HttpStatus.NOT_FOUND, UserErrorCode.USER_NOT_FOUND));
+    }
 }
