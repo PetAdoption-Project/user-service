@@ -2,9 +2,8 @@ name: CI
 
 on:
   push:
-    branches:
+    branches: [master]
   pull_request:
-    branches:
 
 jobs:
   build:
@@ -17,9 +16,8 @@ jobs:
           distribution: temurin
           cache: maven
           server-id: github-packages
-          server-username: MAVEN_USERNAME
-          server-password: MAVEN_PASSWORD
+          server-username: GITHUB_ACTOR
+          server-password: GITHUB_TOKEN
       - run: mvn verify
         env:
-          MAVEN_USERNAME: ${{ github.actor }}
-          MAVEN_PASSWORD: ${{ secrets.GH_PAT }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
